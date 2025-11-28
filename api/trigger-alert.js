@@ -8,7 +8,7 @@ const redis = new Redis({
 });
 
 const ADMIN_SECRET = process.env.ADMIN_SECRET;
-const FCM_KEY = process.env.FCM_SERVER_KEY; // optional, may be empty
+const FCM_KEY = process.env.FCM_SERVER_KEY; // optional
 
 module.exports = async function (req, res) {
   try {
@@ -16,10 +16,9 @@ module.exports = async function (req, res) {
       return res.status(403).json({ error: "Unauthorized" });
     }
 
-    const body = req.body || (req._body ? req._body : undefined);
-    const payload = typeof body === "string" ? JSON.parse(body) : body;
-    const title = payload && payload.title ? payload.title : "Alert";
-    const message = payload && payload.body ? payload.body : "";
+    const payload = req.body || {};
+    const title = payload.title || "Alert";
+    const message = payload.body || "";
 
     const tokens = await redis.smembers("push_tokens");
     if (!tokens || tokens.length === 0) {
@@ -27,17 +26,15 @@ module.exports = async function (req, res) {
     }
 
     if (!FCM_KEY) {
-      // If no FCM key, return ok but indicate nothing was sent
       return res.status(200).json({ ok: true, sent: 0, reason: "no_fcm_key" });
     }
 
-    // send in chunks
     const chunkSize = 500;
     let sent = 0;
     const results = [];
     for (let i = 0; i < tokens.length; i += chunkSize) {
       const chunk = tokens.slice(i, i + chunkSize);
-      const payloadBody = {
+      const body = {
         registration_ids: chunk,
         notification: { title, body: message },
         priority: "high",
@@ -49,7 +46,7 @@ module.exports = async function (req, res) {
           "Content-Type": "application/json",
           Authorization: `key=${FCM_KEY}`,
         },
-        body: JSON.stringify(payloadBody),
+        body: JSON.stringify(body),
       });
 
       const resJson = await r.json().catch(() => ({ status: r.status }));
